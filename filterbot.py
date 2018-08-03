@@ -2,51 +2,15 @@ import discord
 import re
 import asyncio
 import datetime
+
 with open('login.txt') as f:
     TOKEN = f.read()
 
 client = discord.Client()
 role = None
-master_dict = {}
-#create regex list from blacklist and graylist
-blacklist = None
-with open('blacklist.txt') as f:
-    blacklist = f.read().split()
-bRegexes = []
-for word in blacklist:  
-    bRegexes.append(''.join([letter+'+\\s*?.?' for letter in word]))
-bReg_list = []
-for regex in bRegexes:
-    bReg_list.append(re.compile(regex))
 
-graylist = None
-with open('graylist.txt') as f:
-    graylist = f.read().split()
-gRegexes = []
-for word in graylist:
-    gRegexes.append(''.join([letter+'+\\s*?.?' for letter in word]))
-gReg_list = []
-for regex in gRegexes:
-    gReg_list.append(re.compile(regex))
-
-def block_word(message, word):
-    #return true if need to block word else false
-    global master_dict
-    if (message.member, word) in master_dict:
-        #check time and count
-        item = master_dict[(message.member, word)]
-        if item[0] + datetime.timedelta(minutes = 1) < message.timestamp:
-            item[0] = message.timestamp
-            item[1] = 1
-            return False
-        else:
-            item[1] += 1
-            if item[1] > 3:
-                return True
-            return False
-    else:
-        master_dict[(message.member, word)] = [message.timestamp, 1]
-        return False
+def add_to_dictionary(dictionary, word):
+    dictionary[re.compile(''.join([letter+'+\\s*?.?' for letter in word]))] = word
 
 def get_role(role_name, serverid):
     server = client.get_server(serverid)
@@ -65,26 +29,24 @@ def check_muted_role():
             global role 
             role = get_role(split[1], split[0])
 
-async def add_to_list(listName, list, regList, message):
+async def addToList(listName, dictionary, message):
     try:
         newWord = message.content.split(' ', 1)[1]
-        if newWord in list:
+        if newWord in dictionary.values():
             await client.send_message(message.author, "%s is already in the %s" % (newWord, listName))
         else:
             with open("%s.txt" % listName, "a+") as f:
                 f.write("\n" + newWord)
-            regList.append(re.compile(''.join([letter+'+\\s*?.?' for letter in newWord])))
-            list.append(newWord)
+            add_to_dictionary(dictionary, newWord)
             await client.send_message(message.author, "%s has been added to the %s" % (newWord, listName))
     except IndexError:
         print("No second word given")  
 
-async def remove_from_list(listName, list, regList, message):
+async def removeFromList(listName, dictionary, message):
     try:
         newWord = message.content.split(' ', 1)[1]
-        if newWord in list:
-            regList.remove(re.compile(''.join([letter+'+\\s*?.?' for letter in newWord])))
-            list.remove(newWord)
+        if newWord in dictionary.values():
+            del dictionary[(re.compile(''.join([letter+'+\\s*?.?' for letter in newWord])))]
             tempList = []
             with open('%s.txt' % listName, 'r') as f:
                 for line in f:
@@ -99,7 +61,7 @@ async def remove_from_list(listName, list, regList, message):
     except IndexError:
         print("No second word given")
 
-async def blacklist_event(message):
+async def blEvent(message):
     # EZ - MUTED
     await client.delete_message(message)
     if role is None:
@@ -112,7 +74,7 @@ async def blacklist_event(message):
     # client.ban(message.author, delete_message_days = 1)
     # await client.send_message(message.author, "contact admin for unban from " + message.server.name)
 
-async def graylist_event(message):
+async def glEvent(message, word):
 
     #EZ - ONLY MUTE THAT CURSE WORD
     #if db:muted == 0:
@@ -145,41 +107,42 @@ async def on_message(message):
     check = True
     if message.author == client.user:
         return
-        
-    #checks if any text is blacklisted
-    if any(re.search(message.content.lower()) for re in bReg_list):
-        await blacklist_event(message)
-        check = False
-    elif any(re.search(message.content.lower()) for re in gReg_list):
-        await client.send_message(message.channel, "graylist")
-        #graylist_event(message)
-        check = False
+
+    if "admin" not in [y.name.lower() for y in message.author.roles]:
+        #checks if any text is blacklisted
+        if any(re.search(message.content.lower()) for re in blackDictionary.keys()):
+            await blEvent(message)
+            check = False
+        elif any(re.search(message.content.lower()) for re in grayDictionary.keys()):
+            await client.send_message(message.channel, "graylist")
+            # glEvent(message, )
+            check = False
 
     #TODO tts feature
     if check and message.content.startswith('!tts'):
         pass
     #returns blacklist
     if message.content.startswith('!blacklist'):
-        await client.send_message(message.author, ''.join(["Blacklisted words for ", message.server.name, " server: ", ', '.join(blacklist)]))
+        await client.send_message(message.author, ''.join(["Blacklisted words for ", message.server.name, " server: ", ', '.join(blackDictionary.values())]))
 
     #returns graylist
     if message.content.startswith('!graylist'):
-        await client.send_message(message.author, ''.join(["Graylisted words for ", message.server.name, " server: ", ', '.join(graylist)]))
+        await client.send_message(message.author, ''.join(["Graylisted words for ", message.server.name, " server: ", ', '.join(grayDictionary.values())]))
 
     #check if admin
     if message.author.server_permissions.administrator:
             #add to blacklist
             if message.content.startswith('!addblacklist'):
-                await add_to_list('blacklist', blacklist, bReg_list, message)
+                await addToList('blacklist', blackDictionary, message)
             #remove from blacklist
             if message.content.startswith('!rmblacklist'):
-                await remove_from_list('blacklist', blacklist, bReg_list, message)
+                await removeFromList('blacklist', blackDictionary, message)
             #add to graylist
             if message.content.startswith('!addgraylist'):
-                await add_to_list('graylist', graylist, gReg_list, message)
+                await addToList('graylist', grayDictionary, message)
             #remove from graylist
             if message.content.startswith('!rmgraylist'):
-                await remove_from_list('graylist', graylist, gReg_list, message)
+                await removeFromList('graylist', grayDictionary, message)
             if message.content.startswith('!setmutedrole'):
                 try:
                     global role
@@ -199,8 +162,6 @@ async def on_message(message):
             if message.content.startswith('!mutedrolename'):
                 await client.send_message(message.channel, role)
           
-        
-
     #help
     if message.content.startswith("!help"):
         await client.send_message(message.author, 
@@ -217,10 +178,6 @@ Commands:
             "!addblacklist 'word'" will add 'word' to the blacklist
             ''')
 
-    # await client.send_message(message.channel, message.content)
-    
-    # elif message.content.startswith('!bot'):
-    #     await client.send_message(message.channel, "hello", tts=True)
 
 @client.event
 async def on_ready():
@@ -230,5 +187,14 @@ async def on_ready():
     print('------')
     check_muted_role()
 
+#create regex list from blacklist and graylist
+blackDictionary = {}
+with open('blacklist.txt') as f:
+    for x in f.read().split():
+        add_to_dictionary(blackDictionary, x)
+grayDictionary = {}
+with open('blacklist.txt') as f:
+    for x in f.read().split():
+        add_to_dictionary(grayDictionary, x)
 
 client.run(TOKEN)
