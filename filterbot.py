@@ -18,6 +18,7 @@ def get_role(role_name, serverid):
         for role in server.roles:
             if role.name == role_name:
                 return role
+        print('no role set')
     else:
         print("SERVER IS NONE")
 
@@ -28,6 +29,7 @@ def check_muted_role():
             split = mutedChannel.split(" ")
             global role 
             role = get_role(split[1], split[0])
+            print(str(role) + ' has been set to muted role')
 
 async def addToList(listName, dictionary, message):
     try:
@@ -151,12 +153,10 @@ async def on_message(message):
                         await client.edit_role(message.server, role, name = mutedName)
                         role = get_role(mutedName, message.server.id)
                     else:
-                        await client.create_role(message.server, name = mutedName, 
+                        role = await client.create_role(message.server, name = mutedName, 
                             color = discord.Color.light_grey(), permissions = discord.Permissions.none(), position = 0)
-                        role = get_role(mutedName, message.server.id)
                     with open('mutedchannel.txt', 'w') as f:
                         f.write(message.server.id + " " + mutedName)
-                    print(str(role) + " is the role after SETMUTEDROLE")
                 except IndexError:
                     print("No second word")
             if message.content.startswith('!mutedrolename'):
